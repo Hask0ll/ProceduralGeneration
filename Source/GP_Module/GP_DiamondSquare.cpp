@@ -32,7 +32,7 @@ void AGP_DiamondSquare::CreateVertices()
 	{
 		for (int y = 0; y <= iYSize; ++y)
 		{
-			float z = FMath::PerlinNoise2D(FVector2D(x, y));
+			float z = FMath::RandRange(0.f, 1.f);
 			Vertices.Add(FVector(x * fScale, y * fScale, z));
 			UVs.Add(FVector2D(x * fUVScale, y * fUVScale));
 		}
