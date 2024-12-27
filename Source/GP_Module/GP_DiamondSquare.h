@@ -23,6 +23,12 @@ class GP_MODULE_API AGP_DiamondSquare : public AActor
 	UPROPERTY(EditAnywhere, Meta = (ClampMin = 0))
 	int iYSize = 0;
 
+	UPROPERTY(EditAnywhere, Meta = (ClampMin = 0))
+	float ZMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, Meta = (ClampMin = 0))
+	float NoiseScale = 1.0f;
+
 	UPROPERTY(EditAnywhere, Meta = (ClampMin = 0.000001))
 	float fScale = 0.f;
 
