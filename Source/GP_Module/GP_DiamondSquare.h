@@ -17,6 +17,8 @@ class GP_MODULE_API AGP_DiamondSquare : public AActor
 
 	AGP_DiamondSquare();
 
+	virtual void OnConstruction(const FTransform& Transform) override;
+
 	UPROPERTY(EditAnywhere, Meta = (ClampMin = 0))
 	int iXSize = 0;
 
