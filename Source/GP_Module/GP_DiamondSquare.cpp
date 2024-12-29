@@ -2,6 +2,7 @@
 
 
 #include "GP_DiamondSquare.h"
+#include "KismetProceduralMeshLibrary.h"
 
 AGP_DiamondSquare::AGP_DiamondSquare()
 {
@@ -13,22 +14,23 @@ AGP_DiamondSquare::AGP_DiamondSquare()
 void AGP_DiamondSquare::BeginPlay()
 {
 	Super::BeginPlay();
+
+	CreateVertices();
+	CreateTriangles();
+	UKismetProceduralMeshLibrary::CalculateTangentsForMesh(Vertices, Triangles, UVs, Normals, Tangents);
+	
+	ProceduralMesh->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, TArray<FColor>(), Tangents, true);
+	ProceduralMesh->SetMaterial(0, Material);
 }
 
-void AGP_DiamondSquare::OnConstruction(const FTransform& Transform)
+/*void AGP_DiamondSquare::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
-}
+}*/
 
 void AGP_DiamondSquare::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
-	CreateVertices();
-	CreateTriangles();
-	
-	ProceduralMesh->CreateMeshSection(0, Vertices, Triangles, TArray<FVector>(), UVs, TArray<FColor>(), TArray<FProcMeshTangent>(), true);
-	ProceduralMesh->SetMaterial(0, Material);
 }
 
 void AGP_DiamondSquare::CreateVertices()

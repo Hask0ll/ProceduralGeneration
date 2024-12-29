@@ -17,7 +17,7 @@ class GP_MODULE_API AGP_DiamondSquare : public AActor
 
 	AGP_DiamondSquare();
 
-	virtual void OnConstruction(const FTransform& Transform) override;
+	//virtual void OnConstruction(const FTransform& Transform) override;
 
 	UPROPERTY(EditAnywhere, Meta = (ClampMin = 0))
 	int iXSize = 0;
@@ -52,6 +52,8 @@ private:
 	TArray<FVector> Vertices;
 	TArray<int32> Triangles;
 	TArray<FVector2D> UVs;
+	TArray<FProcMeshTangent> Tangents;
+	TArray<FVector> Normals;
 	
 	void CreateVertices();
 	void CreateTriangles();
