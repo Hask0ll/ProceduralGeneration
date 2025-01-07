@@ -10,11 +10,25 @@ ATerrainChunkManager::ATerrainChunkManager()
 	PrimaryActorTick.bCanEverTick = true;
 
 	NoiseGenerator = CreateDefaultSubobject<UFastNoiseWrapper>(TEXT("FastNoiseWrapper"));
+
+	MaxVerticesPerChunk = (ChunkSize + 1) * (ChunkSize + 1);
+}
+
+void ATerrainChunkManager::InitializeBuffers()
+{
+	VertexBuffer.Reserve(MaxVerticesPerChunk);
+	UVBuffer.Reserve(MaxVerticesPerChunk);
+	IndexBuffer.Reserve(ChunkSize * ChunkSize * 6);  // 6 indices par quad
+    
+	// Initialisation du cache de bruit
+	NoiseCache.Reserve(MaxVerticesPerChunk);
 }
 
 void ATerrainChunkManager::BeginPlay()
 {
 	Super::BeginPlay();
+
+	InitializeBuffers();
 
 	// Configuration du générateur de bruit
 	NoiseGenerator->SetupFastNoise(
@@ -39,7 +53,6 @@ void ATerrainChunkManager::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	// Obtenir la position du joueur
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (!PC) return;
 
@@ -94,63 +107,51 @@ void ATerrainChunkManager::UpdateChunks()
 
 void ATerrainChunkManager::CreateChunk(const FIntPoint& ChunkCoord)
 {
-    UProceduralMeshComponent* Chunk = NewObject<UProceduralMeshComponent>(this);
-    Chunk->RegisterComponent();
+	UProceduralMeshComponent* Chunk = NewObject<UProceduralMeshComponent>(this);
+	Chunk->RegisterComponent();
     
-    TArray<FVector> Vertices;
-    TArray<int32> Triangles;
-    TArray<FVector> Normals;
-    TArray<FVector2D> UVs;
-    TArray<FProcMeshTangent> Tangents;
-
-    // Générer les vertices
-    for (int32 X = 0; X <= ChunkSize; X++)
-    {
-        for (int32 Y = 0; Y <= ChunkSize; Y++)
-        {
-            float WorldX = (ChunkCoord.X * ChunkSize) + X;
-            float WorldY = (ChunkCoord.Y * ChunkSize) + Y;
-            
-            float NoiseValue = NoiseGenerator->GetNoise2D(
-                (WorldX + NoiseScale) * NoiseGenerator->GetFrequency(),
-                (WorldY + NoiseScale) * NoiseGenerator->GetFrequency()
-            );
-            
-            float Height = NoiseValue * ZMultiplier;
-            
-            Vertices.Add(FVector(X * fScale, Y * fScale, Height));
-            UVs.Add(FVector2D(X * fUVScale, Y * fUVScale));
-        }
-    }
-
-    // Générer les triangles
-    for (int32 Y = 0; Y < ChunkSize; Y++)
-    {
-        for (int32 X = 0; X < ChunkSize; X++)
-        {
-            int32 Vertex = X + Y * (ChunkSize + 1);
-            
-            Triangles.Add(Vertex);
-            Triangles.Add(Vertex + ChunkSize + 1);
-            Triangles.Add(Vertex + 1);
-            
-            Triangles.Add(Vertex + 1);
-            Triangles.Add(Vertex + ChunkSize + 1);
-            Triangles.Add(Vertex + ChunkSize + 2);
-        }
-    }
-
-    // Calculer les normales et tangentes
-    UKismetProceduralMeshLibrary::CalculateTangentsForMesh(Vertices, Triangles, UVs, Normals, Tangents);
-
-    // Créer la section de mesh
-    Chunk->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, TArray<FColor>(), Tangents, true);
-    Chunk->SetMaterial(0, Material);
-
-    // Positionner le chunk
-    Chunk->SetRelativeLocation(FVector(ChunkCoord.X * ChunkSize * fScale, ChunkCoord.Y * ChunkSize * fScale, 0));
+	// Utiliser les buffers préalloués
+	GenerateOptimizedVertices(ChunkCoord, VertexBuffer, UVBuffer);
+	GenerateOptimizedIndices(IndexBuffer);
     
-    ActiveChunks.Add(ChunkCoord, Chunk);
+	// Calculer les normales et tangentes
+	TArray<FVector> Normals;
+	TArray<FProcMeshTangent> Tangents;
+	UKismetProceduralMeshLibrary::CalculateTangentsForMesh(
+		VertexBuffer, 
+		IndexBuffer, 
+		UVBuffer, 
+		Normals, 
+		Tangents
+	);
+    
+	// Créer la section de mesh
+	Chunk->CreateMeshSection(
+		0, 
+		VertexBuffer, 
+		IndexBuffer, 
+		Normals, 
+		UVBuffer, 
+		TArray<FColor>(), 
+		Tangents, 
+		true
+	);
+    
+	Chunk->SetMaterial(0, Material);
+    
+	// Positionner le chunk
+	Chunk->SetRelativeLocation(
+		FVector(
+			ChunkCoord.X * ChunkSize * fScale, 
+			ChunkCoord.Y * ChunkSize * fScale, 
+			0
+		)
+	);
+    
+	ActiveChunks.Add(ChunkCoord, Chunk);
+    
+	// Vider le cache de bruit après la création du chunk
+	ClearNoiseCache();
 }
 
 void ATerrainChunkManager::RemoveChunk(const FIntPoint& ChunkCoord)
@@ -175,4 +176,97 @@ FIntPoint ATerrainChunkManager::WorldToChunkCoord(const FVector& WorldLocation)
 		FMath::Floor(WorldLocation.X / ChunkSize),
 		FMath::Floor(WorldLocation.Y / ChunkSize)
 	);
+}
+
+float ATerrainChunkManager::GetCachedNoise(float X, float Y)
+{
+	FVector2D NoiseKey(X, Y);
+	float* CachedValue = NoiseCache.Find(NoiseKey);
+    
+	if (CachedValue)
+	{
+		return *CachedValue;
+	}
+    
+	float NoiseValue = NoiseGenerator->GetNoise2D(
+		(X + NoiseScale) * NoiseGenerator->GetFrequency(),
+		(Y + NoiseScale) * NoiseGenerator->GetFrequency()
+	);
+    
+	NoiseCache.Add(NoiseKey, NoiseValue);
+	return NoiseValue;
+}
+
+void ATerrainChunkManager::GenerateOptimizedVertices(const FIntPoint& ChunkCoord, TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs)
+{
+	OutVertices.Reset(MaxVerticesPerChunk);
+	OutUVs.Reset(MaxVerticesPerChunk);
+    
+	// Utiliser SetNum pour éviter les réallocations
+	OutVertices.SetNum(MaxVerticesPerChunk, false);
+	OutUVs.SetNum(MaxVerticesPerChunk, false);
+    
+	// Calculer les offsets du chunk
+	const float ChunkOffsetX = ChunkCoord.X * ChunkSize;
+	const float ChunkOffsetY = ChunkCoord.Y * ChunkSize;
+    
+	// Optimisation SIMD pour le traitement par lots
+	for (int32 Y = 0; Y <= ChunkSize; Y += 4)
+	{
+		for (int32 X = 0; X <= ChunkSize; X += 4)
+		{
+			// Traiter 4x4 vertices à la fois
+			for (int32 SubY = 0; SubY < 4 && (Y + SubY) <= ChunkSize; SubY++)
+			{
+				for (int32 SubX = 0; SubX < 4 && (X + SubX) <= ChunkSize; SubX++)
+				{
+					const int32 CurrentX = X + SubX;
+					const int32 CurrentY = Y + SubY;
+					const int32 Index = CurrentX + CurrentY * (ChunkSize + 1);
+                    
+					const float WorldX = ChunkOffsetX + CurrentX;
+					const float WorldY = ChunkOffsetY + CurrentY;
+                    
+					const float Height = GetCachedNoise(WorldX, WorldY) * ZMultiplier;
+                    
+					OutVertices[Index] = FVector(CurrentX * fScale, CurrentY * fScale, Height);
+					OutUVs[Index] = FVector2D(CurrentX * fUVScale, CurrentY * fUVScale);
+				}
+			}
+		}
+	}
+}
+
+void ATerrainChunkManager::GenerateOptimizedIndices(TArray<int32>& OutIndices)
+{
+	// Réinitialiser le buffer d'indices
+	const int32 NumIndices = ChunkSize * ChunkSize * 6;
+	OutIndices.Reset(NumIndices);
+	OutIndices.SetNum(NumIndices, false);
+    
+	int32 IndexCount = 0;
+    
+	// Générer les indices par lots de quads
+	for (int32 Y = 0; Y < ChunkSize; Y++)
+	{
+		for (int32 X = 0; X < ChunkSize; X++)
+		{
+			const int32 Vertex = X + Y * (ChunkSize + 1);
+            
+			// Triangle 1
+			OutIndices[IndexCount++] = Vertex;
+			OutIndices[IndexCount++] = Vertex + ChunkSize + 1;
+			OutIndices[IndexCount++] = Vertex + 1;
+            
+			// Triangle 2
+			OutIndices[IndexCount++] = Vertex + 1;
+			OutIndices[IndexCount++] = Vertex + ChunkSize + 1;
+			OutIndices[IndexCount++] = Vertex + ChunkSize + 2;
+		}
+	}
+}
+
+void ATerrainChunkManager::ClearNoiseCache()
+{
+	NoiseCache.Empty();
 }

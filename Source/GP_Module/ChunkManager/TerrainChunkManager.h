@@ -61,4 +61,22 @@ private:
 	void RemoveChunk(const FIntPoint& ChunkCoord);
 	bool IsChunkInRange(const FIntPoint& ChunkCoord);
 	FIntPoint WorldToChunkCoord(const FVector& WorldLocation);
+
+	UPROPERTY()
+	int32 MaxVerticesPerChunk;
+	
+	// Buffers préalloués pour les vertices
+	TArray<FVector> VertexBuffer;
+	TArray<FVector2D> UVBuffer;
+	TArray<int32> IndexBuffer;
+    
+	// Méthodes d'optimisation
+	void InitializeBuffers();
+	void GenerateOptimizedVertices(const FIntPoint& ChunkCoord, TArray<FVector>& OutVertices, TArray<FVector2D>& OutUVs);
+	void GenerateOptimizedIndices(TArray<int32>& OutIndices);
+	float GetCachedNoise(float X, float Y);
+    
+	// Cache pour le bruit
+	TMap<FVector2D, float> NoiseCache;
+	void ClearNoiseCache();
 };
