@@ -4,7 +4,6 @@
 #include "TerrainChunkManager.h"
 #include "Kismet/GameplayStatics.h"
 
-
 ATerrainChunkManager::ATerrainChunkManager()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -48,7 +47,6 @@ void ATerrainChunkManager::BeginPlay()
 	UpdateChunks();
 }
 
-// Called every frame
 void ATerrainChunkManager::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -158,7 +156,17 @@ void ATerrainChunkManager::RemoveChunk(const FIntPoint& ChunkCoord)
 {
 	if (UProceduralMeshComponent* Chunk = ActiveChunks[ChunkCoord])
 	{
-		Chunk->DestroyComponent();
+		// Attendre quelques frames avant de détruire le chunk
+		FTimerHandle UnusedHandle;
+		GetWorld()->GetTimerManager().SetTimer(
+			UnusedHandle,
+			[this, Chunk]()
+			{
+				Chunk->DestroyComponent();
+			},
+			0.5f,  // Délai de 0.5 secondes
+			false
+		);
 		ActiveChunks.Remove(ChunkCoord);
 	}
 }
@@ -167,14 +175,15 @@ bool ATerrainChunkManager::IsChunkInRange(const FIntPoint& ChunkCoord)
 {
 	int32 DistanceX = FMath::Abs(ChunkCoord.X - CurrentPlayerChunk.X);
 	int32 DistanceY = FMath::Abs(ChunkCoord.Y - CurrentPlayerChunk.Y);
-	return FMath::Max(DistanceX, DistanceY) <= RenderDistance;
+	// Ajouter une marge de 1 chunk pour éviter les trous
+	return FMath::Max(DistanceX, DistanceY) <= (RenderDistance + 1);
 }
 
 FIntPoint ATerrainChunkManager::WorldToChunkCoord(const FVector& WorldLocation)
 {
 	return FIntPoint(
-		FMath::Floor(WorldLocation.X / ChunkSize),
-		FMath::Floor(WorldLocation.Y / ChunkSize)
+		FMath::Floor(WorldLocation.X / (ChunkSize * fScale)),
+		FMath::Floor(WorldLocation.Y / (ChunkSize * fScale))
 	);
 }
 
